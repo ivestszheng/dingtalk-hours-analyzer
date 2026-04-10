@@ -1,0 +1,32 @@
+{
+  "name": "dingtalk-hours-analyzer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "echarts": "^5.5.1",
+    "element-plus": "^2.9.1",
+    "exceljs": "^4.4.0",
+    "pinia": "^2.3.1",
+    "pinia-plugin-persistedstate": "^4.2.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "vxe-pc-ui": "^4.9.6",
+    "vxe-table": "^4.9.6",
+    "xe-utils": "^3.5.35"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.11"
+  },
+  "volta": {
+    "node": "22.14.0",
+    "pnpm": "10.4.0"
+  }
+}
