@@ -1,117 +1,136 @@
 <template>
   <div class="app-container">
     <el-container class="main-container">
-      <el-header class="app-header">
+      <el-header class="app-header flex items-center justify-between gap-3 p-3 sm:px-5">
         <div class="header-left">
-          <div v-if="dateRange || reportTime" class="header-info">
-            <div class="info-item">
-              <span class="info-label">统计日期：</span>
-              <span class="info-value">{{ dateRange }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">报表生成时间：</span>
-              <span class="info-value">{{ reportTime }}</span>
-            </div>
-          </div>
-          <h1 v-else>钉钉工时分析器</h1>
+          <h1 class="text-lg sm:text-xl text-gray-800 m-0">钉钉工时分析器</h1>
         </div>
         <div class="header-right">
-          <el-space wrap>
-            <el-upload ref="uploadRef" :auto-upload="false" :show-file-list="false" accept=".xlsx,.xls"
-              :on-change="handleFileChange">
-              <el-button type="primary">
+          <div class="sm:hidden">
+            <el-button type="primary" circle @click="mobileMenuVisible = true">
+              <el-icon><Menu /></el-icon>
+            </el-button>
+          </div>
+          <div class="hidden sm:block">
+            <el-space wrap>
+              <el-upload ref="uploadRef" :auto-upload="false" :show-file-list="false" accept=".xlsx,.xls"
+                :on-change="handleFileChange">
+                <el-button type="primary">
+                  <el-icon>
+                    <Upload />
+                  </el-icon>
+                  导入 Excel
+                </el-button>
+              </el-upload>
+              <el-button type="success" :disabled="!hasData" @click="exportToExcel">
                 <el-icon>
-                  <Upload />
+                  <Download />
                 </el-icon>
-                导入 Excel
+                导出 Excel
               </el-button>
-            </el-upload>
-            <el-button type="success" :disabled="!hasData" @click="exportToExcel">
-              <el-icon>
-                <Download />
-              </el-icon>
-              导出 Excel
-            </el-button>
-            <el-button type="warning" @click="downloadTemplate">
-              <el-icon>
-                <Download />
-              </el-icon>
-              下载模版
-            </el-button>
-            <el-button type="danger" :disabled="!hasData" @click="resetData">
-              <el-icon>
-                <Delete />
-              </el-icon>
-              重置
-            </el-button>
-
-          </el-space>
+              <el-button type="warning" @click="downloadTemplate">
+                <el-icon>
+                  <Download />
+                </el-icon>
+                下载模版
+              </el-button>
+              <el-button type="danger" :disabled="!hasData" @click="resetData">
+                <el-icon>
+                  <Delete />
+                </el-icon>
+                重置
+              </el-button>
+            </el-space>
+          </div>
         </div>
       </el-header>
 
-      <el-main class="app-main">
-        <el-tabs v-model="activeTab" type="border-card" closable @tab-remove="removeTab" class="full-height-tabs">
-          <el-tab-pane label="数据列表" name="list" :closable="false">
-            <div class="demo-section">
-              <!-- <div class="section-header">
-                <div class="date-filter" v-if="startDate && endDate">
-                  <el-date-picker
-                  v-model="selectedDateRange"
-                  type="daterange"
-                  range-separator="至"
-                  start-placeholder="开始日期"
-                  end-placeholder="结束日期"
-                  :min="startDate"
-                  :max="endDate"
-                  format="YYYY-MM-DD"
-                  value-format="YYYY-MM-DD"
-                />
+      <el-drawer v-model="mobileMenuVisible" title="操作菜单" size="80%" direction="rtl">
+        <div class="mobile-menu-content flex flex-col gap-4">
+          <div class="menu-upload-wrapper">
+            <el-upload ref="mobileUploadRef" :auto-upload="false" :show-file-list="false" accept=".xlsx,.xls"
+              :on-change="handleFileChange">
+              <el-button type="primary" class="w-full">
+                <el-icon><Upload /></el-icon>
+                导入 Excel
+              </el-button>
+            </el-upload>
+          </div>
+          <el-button type="success" :disabled="!hasData" @click="exportToExcel" class="w-full">
+            <el-icon><Download /></el-icon>
+            导出 Excel
+          </el-button>
+          <el-button type="warning" @click="downloadTemplate" class="w-full">
+            <el-icon><Download /></el-icon>
+            下载模版
+          </el-button>
+          <el-button type="danger" :disabled="!hasData" @click="resetData" class="w-full">
+            <el-icon><Delete /></el-icon>
+            重置
+          </el-button>
+        </div>
+      </el-drawer>
+
+      <el-main class="app-main bg-gray-50 overflow-hidden flex flex-col">
+        <el-tabs v-model="activeTab" type="border-card" closable @tab-remove="removeTab" class="full-height-tabs flex-1 flex flex-col overflow-hidden">
+          <el-tab-pane label="数据列表" name="list" :closable="false" class="flex-1 overflow-auto">
+            <div v-if="dateRange || reportTime" class="m-4 sm:m-5 bg-white p-4 sm:p-5 rounded-md">
+              <div class="flex flex-col sm:flex-row gap-2 sm:gap-10">
+                <div v-if="dateRange" class="flex items-center gap-2">
+                  <span class="text-sm text-gray-600 font-medium">统计日期：</span>
+                  <span class="text-sm text-gray-900 font-semibold">{{ dateRange }}</span>
+                </div>
+                <div v-if="reportTime" class="flex items-center gap-2">
+                  <span class="text-sm text-gray-600 font-medium">报表生成时间：</span>
+                  <span class="text-sm text-gray-900 font-semibold">{{ reportTime }}</span>
+                </div>
               </div>
-              </div> -->
-              <vxe-table border show-overflow :data="tableData" height="400">
+            </div>
+            <div class="demo-section m-4 sm:m-5 bg-white p-4 sm:p-5 rounded-md">
+              <vxe-table border show-overflow :data="tableData" height="400" class="w-full">
                 <vxe-column type="seq" title="序号" width="60"></vxe-column>
-                <vxe-column field="employeeName" title="员工姓名"></vxe-column>
-                <vxe-column field="attendanceGroup" title="考勤组"></vxe-column>
-                <vxe-column field="department" title="部门"></vxe-column>
-                <vxe-column field="position" title="职位"></vxe-column>
-                <vxe-column field="totalActualHours" title="实际总工时" sortable>
+                <vxe-column field="employeeName" title="员工姓名" min-width="100"></vxe-column>
+                <vxe-column field="attendanceGroup" title="考勤组" min-width="100"></vxe-column>
+                <vxe-column field="department" title="部门" min-width="120"></vxe-column>
+                <vxe-column field="position" title="职位" min-width="100"></vxe-column>
+                <vxe-column field="totalActualHours" title="实际总工时" sortable min-width="100">
                   <template #default="{ row }">
                     {{ formatNumber(row.totalActualHours) }}
                   </template>
                 </vxe-column>
-                <vxe-column field="normalHours" title="正常工时" sortable>
+                <vxe-column field="normalHours" title="正常工时" sortable min-width="90">
                   <template #default="{ row }">
                     {{ formatNumber(row.normalHours) }}
                   </template>
                 </vxe-column>
-                <vxe-column field="overtimeHoursOH1" title="加班时段一" sortable>
+                <vxe-column field="overtimeHoursOH1" title="加班时段一" sortable min-width="100">
                   <template #default="{ row }">
                     {{ formatNumber(row.overtimeHoursOH1) }}
                   </template>
                 </vxe-column>
-                <vxe-column field="overtimeHoursOH2" title="加班时段二" sortable>
+                <vxe-column field="overtimeHoursOH2" title="加班时段二" sortable min-width="100">
                   <template #default="{ row }">
                     {{ formatNumber(row.overtimeHoursOH2) }}
                   </template>
                 </vxe-column>
-                <vxe-column field="missingNormalHours" title="缺卡正常工时" sortable>
+                <vxe-column field="missingNormalHours" title="缺卡正常工时" sortable min-width="110">
                   <template #default="{ row }">
                     <span :class="{ 'missing-hours': row.missingNormalHours > 0 }">
                       {{ formatNumber(row.missingNormalHours) }}
                     </span>
                   </template>
                 </vxe-column>
-                <vxe-column field="netOvertimeOH1" title="净加班时段一" sortable>
+                <vxe-column field="netOvertimeOH1" title="净加班时段一" sortable min-width="110">
                   <template #default="{ row }">
                     {{ formatNumber(row.netOvertimeOH1) }}
                   </template>
                 </vxe-column>
-                <vxe-column field="overtimeWage" title="加班总薪资" sortable>
+                <vxe-column field="overtimeWage" title="加班总薪资" sortable min-width="100">
                   <template #default="{ row }">
                     {{ formatNumber(row.overtimeWage) }}
                   </template>
                 </vxe-column>
-                <vxe-column title="操作" width="120">
+                <vxe-column title="操作" width="100" fixed="right">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="viewEmployee(row)">
                       查看
@@ -121,18 +140,18 @@
               </vxe-table>
             </div>
 
-            <div v-if="hasData" class="demo-section">
-              <div ref="departmentCostChart" class="chart-container"></div>
+            <div v-if="hasData" class="demo-section m-4 sm:m-5 bg-white p-4 sm:p-5 rounded-md">
+              <div ref="departmentCostChart" class="chart-container w-full h-80 sm:h-96"></div>
             </div>
-            <div v-if="hasData" class="demo-section">
-              <div ref="attendanceTrendChart" class="chart-container"></div>
+            <div v-if="hasData" class="demo-section m-4 sm:m-5 bg-white p-4 sm:p-5 rounded-md">
+              <div ref="attendanceTrendChart" class="chart-container w-full h-80 sm:h-96"></div>
             </div>
-            <div v-if="hasData" class="demo-section">
-              <div ref="employeeLoadChart" class="chart-container"></div>
+            <div v-if="hasData" class="demo-section m-4 sm:m-5 bg-white p-4 sm:p-5 rounded-md">
+              <div ref="employeeLoadChart" class="chart-container w-full h-80 sm:h-96"></div>
             </div>
           </el-tab-pane>
 
-          <el-tab-pane v-for="tab in tabs" :key="tab.name" :label="tab.title" :name="tab.name">
+          <el-tab-pane v-for="tab in tabs" :key="tab.name" :label="tab.title" :name="tab.name" class="flex-1 overflow-auto">
             <keep-alive>
               <EmployeeDetail :employee-data="tab.employeeData" />
             </keep-alive>
@@ -141,9 +160,9 @@
       </el-main>
     </el-container>
 
-    <el-button class="config-btn" :icon="Setting" type="info" circle @click="drawerVisible = true" />
+    <el-button class="config-btn fixed right-5 sm:right-8 top-1/2 -translate-y-1/2 z-50" :icon="Setting" type="info" circle @click="drawerVisible = true" />
 
-    <el-drawer v-model="drawerVisible" title="全局配置" size="450px" direction="rtl">
+    <el-drawer v-model="drawerVisible" title="全局配置" size="90% sm:450px" direction="rtl">
       <el-form :model="configStore" label-width="160px">
         <el-form-item label="标准上班时刻">
           <el-input v-model="configStore.STD_START_TIME" placeholder="HH:mm" />
@@ -192,7 +211,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import * as echarts from 'echarts'
 import ExcelJS from 'exceljs'
 import { ElMessage } from 'element-plus'
-import { Download, Upload, Delete, Setting } from '@element-plus/icons-vue'
+import { Download, Upload, Delete, Setting, Menu } from '@element-plus/icons-vue'
 import { useConfigStore } from '@/stores/config'
 import EmployeeDetail from '@/pages/EmployeeDetail/index.vue'
 import { processEmployeeData } from '@/utils/calculator'
@@ -205,6 +224,7 @@ import {
 
 const configStore = useConfigStore()
 const drawerVisible = ref(false)
+const mobileMenuVisible = ref(false)
 const activeTab = ref('list')
 const tabs = ref([])
 let tabCounter = 0
@@ -213,6 +233,7 @@ const departmentCostChart = ref(null)
 const attendanceTrendChart = ref(null)
 const employeeLoadChart = ref(null)
 const uploadRef = ref(null)
+const mobileUploadRef = ref(null)
 let departmentCostChartInstance = null
 let attendanceTrendChartInstance = null
 let employeeLoadChartInstance = null
@@ -320,6 +341,7 @@ const updateAllCharts = () => {
 }
 
 const handleFileChange = async (file) => {
+  mobileMenuVisible.value = false
   try {
     const arrayBuffer = await file.raw.arrayBuffer()
     const workbook = new ExcelJS.Workbook()
@@ -357,41 +379,43 @@ const handleFileChange = async (file) => {
           }
         }
       } else if (rowNumber === 3) {
-        for (let i = 1; i <= 26; i++) {
-          const cellValue = row.getCell(i).value
+        row.eachCell((cell, colIndex) => {
+          const cellValue = cell.value
           if (cellValue) {
             switch (cellValue) {
               case '姓名':
-                headers.name = i
+                headers.name = colIndex
                 break
               case '考勤组':
-                headers.attendanceGroup = i
+                headers.attendanceGroup = colIndex
                 break
               case '部门':
-                headers.department = i
+                headers.department = colIndex
                 break
               case '工号':
-                headers.employeeId = i
+                headers.employeeId = colIndex
                 break
               case '职位':
-                headers.position = i
+                headers.position = colIndex
                 break
               case '打卡时间':
-                headers.punchTime = i
+                headers.punchTime = colIndex
                 break
             }
           }
-        }
+        })
       } else if (rowNumber === 4) {
-        for (let i = 7; i <= 26; i++) {
-          const cellValue = row.getCell(i).value
-          if (cellValue) {
-            const dateInfo = parseDateRow(cellValue, dateCells, i)
-            if (dateInfo) {
-              dateCells[i] = dateInfo
+        row.eachCell((cell, colIndex) => {
+          if (colIndex >= 7) {
+            const cellValue = cell.value
+            if (cellValue) {
+              const dateInfo = parseDateRow(cellValue, dateCells, colIndex)
+              if (dateInfo) {
+                dateCells[colIndex] = dateInfo
+              }
             }
           }
-        }
+        })
       } else if (rowNumber >= 5) {
         const name = headers.name ? row.getCell(headers.name).value : null
         if (name) {
@@ -417,9 +441,10 @@ const handleFileChange = async (file) => {
             logicTags: []
           }
 
-          for (let i = 7; i <= 26; i++) {
-            const punchTime = row.getCell(i).value
-            const dateInfo = dateCells[i]
+          Object.keys(dateCells).forEach(colIndexStr => {
+            const colIndex = parseInt(colIndexStr)
+            const punchTime = row.getCell(colIndex).value
+            const dateInfo = dateCells[colIndex]
             if (punchTime && dateInfo) {
               let times = punchTime
               if (typeof times === 'string') {
@@ -434,7 +459,7 @@ const handleFileChange = async (file) => {
                 time: times
               })
             }
-          }
+          })
 
           employeeData.push(employee)
         }
@@ -478,6 +503,7 @@ const handleFileChange = async (file) => {
   }
 
   uploadRef.value?.clearFiles()
+  mobileUploadRef.value?.clearFiles()
 }
 
 const exportToExcel = async () => {
@@ -563,6 +589,7 @@ const exportToExcel = async () => {
 }
 
 const downloadTemplate = () => {
+  mobileMenuVisible.value = false
   const link = document.createElement('a')
   link.href = '/example.xlsx'
   link.download = '工时数据模版.xlsx'
@@ -571,6 +598,7 @@ const downloadTemplate = () => {
 }
 
 const resetData = () => {
+  mobileMenuVisible.value = false
   tableData.value = []
   employeeDataStore.value = []
   tabs.value = []
@@ -611,28 +639,8 @@ watch(hasData, (newVal) => {
 .app-header {
   background: #fff;
   border-bottom: 1px solid #e4e7ed;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 20px;
-  height: 64px !important;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 40px;
-}
-
-.header-left h1 {
-  margin: 0;
-  font-size: 20px;
-  color: #333;
-}
-
-.header-info {
-  display: flex;
-  gap: 40px;
+  height: auto !important;
+  min-height: 64px;
 }
 
 .app-main {
@@ -656,9 +664,7 @@ watch(hasData, (newVal) => {
 }
 
 .demo-section {
-  margin: 20px 0;
   background: #fff;
-  padding: 20px;
   border-radius: 4px;
 }
 
@@ -668,30 +674,8 @@ watch(hasData, (newVal) => {
   margin-top: 0;
 }
 
-.info-section {
-  display: flex;
-  gap: 40px;
-}
-
-.info-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.info-label {
-  color: #666;
-  font-weight: 500;
-}
-
-.info-value {
-  color: #333;
-  font-weight: 600;
-}
-
 .chart-container {
   width: 100%;
-  height: 400px;
 }
 
 .missing-hours {
@@ -701,9 +685,31 @@ watch(hasData, (newVal) => {
 
 .config-btn {
   position: fixed;
-  right: 30px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 1000;
+}
+
+.mobile-menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.menu-upload-wrapper {
+  width: 100%;
+}
+
+.menu-upload-wrapper :deep(.el-upload) {
+  width: 100%;
+}
+
+.menu-upload-wrapper :deep(.el-button) {
+  width: 100%;
+  margin-left: 0 !important;
+}
+
+.mobile-menu-content :deep(.el-button) {
+  margin-left: 0 !important;
 }
 </style>

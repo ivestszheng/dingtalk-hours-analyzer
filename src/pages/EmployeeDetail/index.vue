@@ -49,6 +49,9 @@
     
     <div v-if="currentEmployee" class="charts-section">
       <div class="chart-item">
+        <div ref="dailyWorkDetailChart" class="chart-container"></div>
+      </div>
+      <div class="chart-item">
         <div ref="monthlyCompositionChart" class="chart-container"></div>
       </div>
       <div class="chart-item">
@@ -65,6 +68,7 @@ import { formatWeekday } from '@/utils/dateParser'
 import { generateDetailData } from '@/utils/employeeDetail'
 import { useConfigStore } from '@/stores/config'
 import {
+  getDailyWorkDetailChartOption,
   getMonthlyCompositionChartOption,
   getPunchTrendChartOption
 } from '@/utils/chartOptions'
@@ -78,8 +82,10 @@ const props = defineProps({
 
 const configStore = useConfigStore()
 const currentEmployee = computed(() => props.employeeData)
+const dailyWorkDetailChart = ref(null)
 const monthlyCompositionChart = ref(null)
 const punchTrendChart = ref(null)
+let dailyWorkDetailChartInstance = null
 let monthlyCompositionChartInstance = null
 let punchTrendChartInstance = null
 
@@ -99,6 +105,15 @@ const detailData = computed(() => {
 
 const initEmployeeCharts = () => {
   if (!currentEmployee.value) return
+  
+  if (dailyWorkDetailChart.value) {
+    if (dailyWorkDetailChartInstance) {
+      dailyWorkDetailChartInstance.dispose()
+    }
+    dailyWorkDetailChartInstance = echarts.init(dailyWorkDetailChart.value)
+    const option = getDailyWorkDetailChartOption(currentEmployee.value, configStore)
+    dailyWorkDetailChartInstance.setOption(option)
+  }
   
   if (monthlyCompositionChart.value) {
     if (monthlyCompositionChartInstance) {
@@ -130,6 +145,7 @@ onMounted(() => {
     initEmployeeCharts()
   })
   window.addEventListener('resize', () => {
+    dailyWorkDetailChartInstance?.resize()
     monthlyCompositionChartInstance?.resize()
     punchTrendChartInstance?.resize()
   })
