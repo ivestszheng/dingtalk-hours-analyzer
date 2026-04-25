@@ -93,9 +93,12 @@ const detailData = computed(() => {
   if (!currentEmployee.value) return []
   
   const data = generateDetailData(currentEmployee.value, configStore)
+  const monthPrefix = currentEmployee.value.reportMonth
+    ? `${String(currentEmployee.value.reportMonth).padStart(2, '0')}/`
+    : ''
   
   return data.map(item => ({
-    date: `3/${String(item.date).padStart(2, '0')}`,
+    date: `${monthPrefix}${String(item.date).padStart(2, '0')}`,
     weekday: formatWeekday(item.weekday),
     raw: item.raw,
     logic: item.logic,
@@ -129,7 +132,7 @@ const initEmployeeCharts = () => {
       punchTrendChartInstance.dispose()
     }
     punchTrendChartInstance = echarts.init(punchTrendChart.value)
-    const option = getPunchTrendChartOption(currentEmployee.value)
+    const option = getPunchTrendChartOption(currentEmployee.value, configStore)
     punchTrendChartInstance.setOption(option)
   }
 }

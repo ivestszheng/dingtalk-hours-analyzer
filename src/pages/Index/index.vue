@@ -170,6 +170,12 @@
         <el-form-item label="标准下班时刻">
           <el-input v-model="configStore.STD_END_TIME" placeholder="HH:mm" />
         </el-form-item>
+        <el-form-item label="午休开始时刻">
+          <el-input v-model="configStore.BREAK_START_TIME" placeholder="HH:mm" />
+        </el-form-item>
+        <el-form-item label="午休结束时刻">
+          <el-input v-model="configStore.BREAK_END_TIME" placeholder="HH:mm" />
+        </el-form-item>
         <el-form-item label="标准工时时长">
           <el-input-number v-model="configStore.STD_HOURS_PER_DAY" :min="1" :max="24" />
         </el-form-item>
@@ -184,12 +190,6 @@
         </el-form-item>
         <el-form-item label="加班二时段起点">
           <el-input v-model="configStore.OT2_START_TIME" placeholder="HH:mm" />
-        </el-form-item>
-        <el-form-item label="加班二时段终点">
-          <el-input v-model="configStore.OT2_END_TIME" placeholder="HH:mm" />
-        </el-form-item>
-        <el-form-item label="缺卡判定阈值">
-          <el-input v-model="configStore.LATE_CHECK_THRESHOLD" placeholder="HH:mm" />
         </el-form-item>
         <el-form-item label="OH1 薪资费率(元/小时)">
           <el-input-number v-model="configStore.RATE_OH1" :min="1" :max="1000" />
@@ -300,7 +300,7 @@ const initAllCharts = () => {
       departmentCostChartInstance.dispose()
     }
     departmentCostChartInstance = echarts.init(departmentCostChart.value)
-    const option = getDepartmentCostChartOption(tableData.value)
+    const option = getDepartmentCostChartOption(tableData.value, configStore)
     departmentCostChartInstance.setOption(option)
   }
 
@@ -309,7 +309,7 @@ const initAllCharts = () => {
       attendanceTrendChartInstance.dispose()
     }
     attendanceTrendChartInstance = echarts.init(attendanceTrendChart.value)
-    const option = getAttendanceTrendChartOption(employeeDataStore.value)
+    const option = getAttendanceTrendChartOption(employeeDataStore.value, configStore)
     attendanceTrendChartInstance.setOption(option)
   }
 
@@ -325,12 +325,12 @@ const initAllCharts = () => {
 
 const updateAllCharts = () => {
   if (departmentCostChartInstance) {
-    const option = getDepartmentCostChartOption(tableData.value)
+    const option = getDepartmentCostChartOption(tableData.value, configStore)
     departmentCostChartInstance.setOption(option)
   }
 
   if (attendanceTrendChartInstance) {
-    const option = getAttendanceTrendChartOption(employeeDataStore.value)
+    const option = getAttendanceTrendChartOption(employeeDataStore.value, configStore)
     attendanceTrendChartInstance.setOption(option)
   }
 
@@ -430,6 +430,7 @@ const handleFileChange = async (file) => {
             employeeId: headers.employeeId ? row.getCell(headers.employeeId).value || '' : '',
             position: headers.position ? row.getCell(headers.position).value || '' : '',
             attendanceGroup: headers.attendanceGroup ? row.getCell(headers.attendanceGroup).value || '' : '',
+            reportMonth: month,
             totalActualHours: 0,
             normalHours: 0,
             overtimeHoursOH1: 0,
@@ -438,7 +439,9 @@ const handleFileChange = async (file) => {
             netOvertimeOH1: 0,
             overtimeWage: 0,
             rawPunches: [],
-            logicTags: []
+            logicTags: [],
+            processedShifts: [],
+            dailyRecords: []
           }
 
           Object.keys(dateCells).forEach(colIndexStr => {
@@ -482,7 +485,8 @@ const handleFileChange = async (file) => {
       netOvertimeOH1: emp.netOvertimeOH1,
       overtimeWage: emp.overtimeWage,
       rawPunches: emp.rawPunches,
-      logicTags: emp.logicTags
+      logicTags: emp.logicTags,
+      reportMonth: emp.reportMonth
     }))
 
     console.log('员工数据:', processedData)

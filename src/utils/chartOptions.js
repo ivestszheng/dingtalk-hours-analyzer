@@ -1,3 +1,5 @@
+import { analyzeEmployeeShifts, minutesToTime, timeToMinutes } from '@/utils/shiftProcessor'
+
 const formatNumber = (num) => {
   if (num == null || num === undefined) return ''
   if (num === 0) return '0'
@@ -5,22 +7,49 @@ const formatNumber = (num) => {
   return num.toFixed(2)
 }
 
-export const getDepartmentCostChartOption = (data) => {
-  const departments = [...new Set(data.map(item => item.department))]
-  
-  const oh1Cost = departments.map(dept => {
-    const deptData = data.filter(item => item.department === dept)
-    return deptData.reduce((sum, item) => sum + item.overtimeHoursOH1 * 20, 0)
-  })
-  
-  const oh2Cost = departments.map(dept => {
-    const deptData = data.filter(item => item.department === dept)
-    return deptData.reduce((sum, item) => sum + item.overtimeHoursOH2 * 30, 0)
+const formatDepartmentLabel = (department) => {
+  if (Array.isArray(department)) {
+    return department.join(' / ')
+  }
+
+  return department || '未分配部门'
+}
+
+const getAnalysis = (employee, config) => {
+  if (Array.isArray(employee?.processedShifts) && employee.processedShifts.length > 0) {
+    return {
+      shifts: employee.processedShifts,
+      dailyRecords: employee.dailyRecords || []
+    }
+  }
+
+  return analyzeEmployeeShifts(employee, config)
+}
+
+export const getDepartmentCostChartOption = (data, config) => {
+  const departmentMap = new Map()
+  const rateOH1 = Number(config?.RATE_OH1) || 0
+  const rateOH2 = Number(config?.RATE_OH2) || 0
+
+  data.forEach((item) => {
+    const label = formatDepartmentLabel(item.department)
+    if (!departmentMap.has(label)) {
+      departmentMap.set(label, {
+        oh1Cost: 0,
+        oh2Cost: 0
+      })
+    }
+
+    const departmentData = departmentMap.get(label)
+    departmentData.oh1Cost += (Number(item.netOvertimeOH1) || 0) * rateOH1
+    departmentData.oh2Cost += (Number(item.overtimeHoursOH2) || 0) * rateOH2
   })
 
-  const totalCost = oh1Cost.map((val, i) => val + oh2Cost[i])
-  const maxCost = Math.max(...totalCost)
-  const yAxisMax = maxCost + Math.max(50, maxCost * 0.1)
+  const departments = [...departmentMap.keys()]
+  const oh1Cost = departments.map(label => departmentMap.get(label).oh1Cost)
+  const oh2Cost = departments.map(label => departmentMap.get(label).oh2Cost)
+  const totalCost = oh1Cost.map((value, index) => value + oh2Cost[index])
+  const maxCost = totalCost.length ? Math.max(...totalCost) : 0
 
   return {
     title: {
@@ -34,8 +63,8 @@ export const getDepartmentCostChartOption = (data) => {
         type: 'shadow'
       },
       formatter: (params) => {
-        let result = params[0].name + '<br/>'
-        params.forEach(param => {
+        let result = `${params[0]?.name || ''}<br/>`
+        params.forEach((param) => {
           result += `${param.marker}${param.seriesName}: ${formatNumber(param.value)} 元<br/>`
         })
         return result
@@ -47,9 +76,9 @@ export const getDepartmentCostChartOption = (data) => {
     },
     grid: {
       top: 80,
-      left: 50,
+      left: 60,
       right: 30,
-      bottom: 30
+      bottom: 40
     },
     xAxis: {
       type: 'category',
@@ -59,7 +88,7 @@ export const getDepartmentCostChartOption = (data) => {
       type: 'value',
       name: '金额（元）',
       min: 0,
-      max: yAxisMax
+      max: maxCost > 0 ? maxCost + Math.max(50, maxCost * 0.1) : 100
     },
     series: [
       {
@@ -84,74 +113,41 @@ export const getDepartmentCostChartOption = (data) => {
   }
 }
 
-export const getAttendanceTrendChartOption = (employeeData) => {
-  const dateMap = {}
-  
-  employeeData.forEach(emp => {
-    emp.rawPunches?.forEach(punch => {
-      if (!dateMap[punch.date]) {
-        dateMap[punch.date] = {
+export const getAttendanceTrendChartOption = (employeeData, config) => {
+  const dateMap = new Map()
+
+  employeeData.forEach((employee) => {
+    const { shifts } = getAnalysis(employee, config)
+    shifts.forEach((shift) => {
+      const dateKey = shift.startDate
+      if (!dateMap.has(dateKey)) {
+        dateMap.set(dateKey, {
           totalOvertime: 0,
           offDutyTimes: []
-        }
+        })
       }
-      
-      const oh1 = typeof emp.overtimeHoursOH1 === 'number' && !isNaN(emp.overtimeHoursOH1) ? emp.overtimeHoursOH1 : 0
-      const oh2 = typeof emp.overtimeHoursOH2 === 'number' && !isNaN(emp.overtimeHoursOH2) ? emp.overtimeHoursOH2 : 0
-      
-      dateMap[punch.date].totalOvertime += oh1 + oh2
-      
-      if (punch.time.length > 0) {
-        dateMap[punch.date].offDutyTimes.push(punch.time[punch.time.length - 1])
+
+      const dateEntry = dateMap.get(dateKey)
+      dateEntry.totalOvertime += (shift.overtimeMinutesOH1 + shift.overtimeMinutesOH2) / 60
+
+      if (shift.endAbsoluteMinutes != null) {
+        dateEntry.offDutyTimes.push(shift.endAbsoluteMinutes - ((shift.startDate - 1) * 24 * 60))
       }
     })
   })
 
-  const dates = Object.keys(dateMap).sort((a, b) => a - b)
-  const totalOvertime = dates.map(date => {
-    const val = dateMap[date].totalOvertime
-    return typeof val === 'number' && !isNaN(val) && isFinite(val) ? val : 0
-  })
-  
-  const avgOffDutyMinutes = dates.map(date => {
-    const times = dateMap[date].offDutyTimes
-    if (times.length === 0) return null
-    const totalMinutes = times.reduce((sum, time) => {
-      const [h, m] = time.split(':').map(Number)
-      return sum + h * 60 + m
-    }, 0)
-    const avg = totalMinutes / times.length
-    return typeof avg === 'number' && !isNaN(avg) && isFinite(avg) ? avg : null
+  const dates = [...dateMap.keys()].sort((a, b) => a - b)
+  const totalOvertime = dates.map(date => dateMap.get(date).totalOvertime)
+  const avgOffDutyMinutes = dates.map((date) => {
+    const offDutyTimes = dateMap.get(date).offDutyTimes
+    if (!offDutyTimes.length) return null
+    return offDutyTimes.reduce((sum, minutes) => sum + minutes, 0) / offDutyTimes.length
   })
 
-  const formatMinutesToTime = (minutes) => {
-    const h = Math.floor(minutes / 60)
-    const m = Math.floor(minutes % 60)
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  }
-
-  const validOvertime = totalOvertime.filter(val => val != null && !isNaN(val) && isFinite(val) && val > 0)
-  let minOvertime = 0
-  let maxOvertime = 10
-  
-  if (validOvertime.length > 0) {
-    minOvertime = Math.min(...validOvertime)
-    maxOvertime = Math.max(...validOvertime)
-  }
-  
-  const validOffDuty = avgOffDutyMinutes.filter(val => val != null && !isNaN(val) && isFinite(val))
-  let minOffDuty = 480
-  let maxOffDuty = 1080
-  
-  if (validOffDuty.length > 0) {
-    minOffDuty = Math.min(...validOffDuty)
-    maxOffDuty = Math.max(...validOffDuty)
-  }
-
-  const leftYAxisMin = Math.max(0, minOvertime - (minOvertime > 0 ? 1 : 0))
-  const leftYAxisMax = maxOvertime + (maxOvertime > 0 ? 2 : 10)
-  const rightYAxisMin = Math.max(0, minOffDuty - 60)
-  const rightYAxisMax = Math.min(1440, maxOffDuty + 60)
+  const validOvertime = totalOvertime.filter(value => value > 0)
+  const maxOvertime = validOvertime.length ? Math.max(...validOvertime) : 0
+  const validOffDuty = avgOffDutyMinutes.filter(value => value != null)
+  const maxOffDuty = validOffDuty.length ? Math.max(...validOffDuty) : 18 * 60
 
   return {
     title: {
@@ -162,12 +158,15 @@ export const getAttendanceTrendChartOption = (employeeData) => {
     tooltip: {
       trigger: 'axis',
       formatter: (params) => {
-        let result = params[0].name + '<br/>'
-        params.forEach(param => {
+        let result = `${params[0]?.name || ''}<br/>`
+        params.forEach((param) => {
           if (param.seriesName === '总加班工时') {
             result += `${param.marker}${param.seriesName}: ${formatNumber(param.value)} 小时<br/>`
-          } else if (param.value != null) {
-            result += `${param.marker}${param.seriesName}: ${formatMinutesToTime(param.value)}<br/>`
+            return
+          }
+
+          if (param.value != null) {
+            result += `${param.marker}${param.seriesName}: ${minutesToTime(param.value)}<br/>`
           }
         })
         return result
@@ -179,29 +178,29 @@ export const getAttendanceTrendChartOption = (employeeData) => {
     },
     grid: {
       top: 80,
-      left: 50,
-      right: 80,
-      bottom: 30
+      left: 60,
+      right: 90,
+      bottom: 40
     },
     xAxis: {
       type: 'category',
-      data: dates.map(d => `${d}日`)
+      data: dates.map(date => `${date}日`)
     },
     yAxis: [
       {
         type: 'value',
         name: '加班工时（小时）',
-        position: 'left'
+        min: 0,
+        max: maxOvertime > 0 ? maxOvertime + 2 : 10
       },
       {
         type: 'value',
-        name: '时间',
-        position: 'right',
-        min: 480,
-        max: 1320,
-        interval: 60,
+        name: '下班时间',
+        min: 8 * 60,
+        max: Math.max(24 * 60, Math.ceil(maxOffDuty / 60) * 60 + 60),
+        interval: 120,
         axisLabel: {
-          formatter: (value) => formatMinutesToTime(value)
+          formatter: (value) => minutesToTime(value)
         }
       }
     ],
@@ -209,7 +208,6 @@ export const getAttendanceTrendChartOption = (employeeData) => {
       {
         name: '总加班工时',
         type: 'bar',
-        yAxisIndex: 0,
         data: totalOvertime,
         itemStyle: {
           color: '#409EFF'
@@ -230,19 +228,11 @@ export const getAttendanceTrendChartOption = (employeeData) => {
 }
 
 export const getEmployeeLoadChartOption = (data) => {
-  const totalHoursValues = data.map(item => item.totalActualHours)
-  const overtimeWageValues = data.map(item => item.overtimeWage)
-  
-  const minTotalHours = Math.min(...totalHoursValues)
-  const maxTotalHours = Math.max(...totalHoursValues)
-  const minOvertimeWage = Math.min(...overtimeWageValues)
-  const maxOvertimeWage = Math.max(...overtimeWageValues)
-  
-  const xAxisMin = Math.max(0, minTotalHours - 5)
-  const xAxisMax = maxTotalHours + 5
-  const yAxisMin = Math.max(0, minOvertimeWage - 50)
-  const yAxisMax = maxOvertimeWage + 50
-  
+  const totalHoursValues = data.map(item => Number(item.totalActualHours) || 0)
+  const overtimeWageValues = data.map(item => Number(item.overtimeWage) || 0)
+  const maxTotalHours = totalHoursValues.length ? Math.max(...totalHoursValues) : 0
+  const maxOvertimeWage = overtimeWageValues.length ? Math.max(...overtimeWageValues) : 0
+
   return {
     title: {
       text: '员工负荷',
@@ -268,19 +258,19 @@ export const getEmployeeLoadChartOption = (data) => {
     xAxis: {
       type: 'value',
       name: '实际总工时（小时）',
-      min: xAxisMin,
-      max: xAxisMax
+      min: 0,
+      max: maxTotalHours > 0 ? maxTotalHours + 5 : 10
     },
     yAxis: {
       type: 'value',
       name: '加班薪资（元）',
-      min: yAxisMin,
-      max: yAxisMax
+      min: 0,
+      max: maxOvertimeWage > 0 ? maxOvertimeWage + 50 : 100
     },
     visualMap: {
       type: 'continuous',
       min: 0,
-      max: Math.max(maxTotalHours, maxOvertimeWage / 20),
+      max: Math.max(maxTotalHours, maxOvertimeWage / 20, 1),
       left: 'right',
       top: 'center',
       calculable: true,
@@ -299,10 +289,10 @@ export const getEmployeeLoadChartOption = (data) => {
         type: 'scatter',
         data: data.map(item => ({
           name: item.employeeName,
-          value: [item.totalActualHours, item.overtimeWage],
+          value: [Number(item.totalActualHours) || 0, Number(item.overtimeWage) || 0],
           employeeName: item.employeeName
         })),
-        symbolSize: 8,
+        symbolSize: 10,
         itemStyle: {
           color: '#FF9900'
         }
@@ -326,9 +316,6 @@ export const getMonthlyCompositionChartOption = (employee) => {
       orient: 'vertical',
       left: 'left',
       top: 40
-    },
-    grid: {
-      top: 80
     },
     series: [
       {
@@ -356,10 +343,10 @@ export const getMonthlyCompositionChartOption = (employee) => {
           show: false
         },
         data: [
-          { value: formatNumber(employee.normalHours), name: '正常工时', itemStyle: { color: '#67C23A' } },
-          { value: formatNumber(employee.overtimeHoursOH1), name: 'OH1 加班工时', itemStyle: { color: '#FF9900' } },
-          { value: formatNumber(employee.overtimeHoursOH2), name: 'OH2 加班工时', itemStyle: { color: '#F56C6C' } },
-          { value: formatNumber(employee.missingNormalHours), name: '缺卡工时', itemStyle: { color: '#909399' } }
+          { value: Number(employee.normalHours) || 0, name: '正常工时', itemStyle: { color: '#67C23A' } },
+          { value: Number(employee.overtimeHoursOH1) || 0, name: 'OH1 加班工时', itemStyle: { color: '#FF9900' } },
+          { value: Number(employee.overtimeHoursOH2) || 0, name: 'OH2 加班工时', itemStyle: { color: '#F56C6C' } },
+          { value: Number(employee.missingNormalHours) || 0, name: '缺卡工时', itemStyle: { color: '#909399' } }
         ]
       }
     ]
@@ -367,132 +354,111 @@ export const getMonthlyCompositionChartOption = (employee) => {
 }
 
 export const getDailyWorkDetailChartOption = (employee, config) => {
-  const timeToMinutes = (timeStr) => {
-    if (!timeStr) return 0
-    const [h, m] = timeStr.split(':').map(Number)
-    return h * 60 + m
-  }
-  
-  const formatMinutesToTime = (minutes) => {
-    const h = Math.floor(minutes / 60)
-    const m = Math.floor(minutes % 60)
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  }
-
+  const { shifts, dailyRecords } = getAnalysis(employee, config)
   const stdStart = timeToMinutes(config.STD_START_TIME)
-  const stdEnd = timeToMinutes(config.STD_END_TIME)
   const ot1Start = timeToMinutes(config.OT1_START_TIME)
-  const ot1End = timeToMinutes(config.OT1_END_TIME)
   const ot2Start = timeToMinutes(config.OT2_START_TIME)
-
-  const dates = employee.rawPunches?.map(p => p.date).sort((a, b) => a - b) || []
-  const dateData = employee.rawPunches || []
+  const stdEnd = timeToMinutes(config.STD_END_TIME)
+  const ot1End = timeToMinutes(config.OT1_END_TIME)
+  const chartDates = [...new Set(
+    (dailyRecords?.length
+      ? dailyRecords.map(record => record.date)
+      : shifts.flatMap(shift => [shift.startDate, shift.endDate])
+    )
+  )].sort((a, b) => a - b)
+  const labels = chartDates.map(date => `${date}日`)
+  const dateIndexMap = new Map(chartDates.map((date, index) => [date, index]))
 
   const normalData = []
   const ot1Data = []
   const ot2Data = []
+  const missingData = []
 
-  dates.forEach((date, dateIndex) => {
-    const punch = dateData.find(p => p.date === date)
-    if (!punch || punch.time.length < 2) {
-      return
+  const pushSegment = (collection, date, start, end) => {
+    const index = dateIndexMap.get(date)
+    if (index == null || end <= start) return
+    collection.push([start, end, index])
+  }
+
+  shifts.forEach((shift) => {
+    if (!shift.cleanedStart || shift.endAbsoluteMinutes == null) return
+
+    const dayOffset = (shift.startDate - 1) * 24 * 60
+    const start = shift.startAbsoluteMinutes - dayOffset
+    const end = shift.endAbsoluteMinutes - dayOffset
+
+    const normalStart = Math.max(start, stdStart)
+    const normalEnd = Math.min(end, stdEnd)
+    pushSegment(normalData, shift.startDate, normalStart, normalEnd)
+
+    const overtimeStartOH1 = Math.max(start, ot1Start)
+    const overtimeEndOH1 = Math.min(end, ot1End)
+    pushSegment(ot1Data, shift.startDate, overtimeStartOH1, overtimeEndOH1)
+
+    const overtimeStartOH2 = Math.max(start, ot2Start)
+    if (shift.isCrossDay && shift.endDate !== shift.startDate) {
+      pushSegment(ot2Data, shift.startDate, overtimeStartOH2, 24 * 60)
+      pushSegment(ot2Data, shift.endDate, 0, shift.cleanedEnd?.minutes ?? 0)
+    } else {
+      pushSegment(ot2Data, shift.startDate, overtimeStartOH2, Math.min(end, 24 * 60))
     }
 
-    const times = punch.time.map(t => timeToMinutes(t)).sort((a, b) => a - b)
-    const startTime = times[0]
-    const endTime = times[times.length - 1]
-
-    const normalStart = Math.max(startTime, stdStart)
-    const normalEnd = Math.min(endTime, stdEnd)
-    if (normalStart < normalEnd) {
-      normalData.push([normalStart, normalEnd, dateIndex])
-    }
-
-    const ot1StartVal = Math.max(startTime, ot1Start)
-    const ot1EndVal = Math.min(endTime, ot1End)
-    if (ot1StartVal < ot1EndVal) {
-      ot1Data.push([ot1StartVal, ot1EndVal, dateIndex])
-    }
-
-    const ot2StartVal = Math.max(startTime, ot2Start)
-    const ot2EndVal = endTime
-    if (ot2StartVal < ot2EndVal) {
-      ot2Data.push([ot2StartVal, ot2EndVal, dateIndex])
-    }
+    ;(shift.missingSegments || []).forEach(([segmentStart, segmentEnd]) => {
+      pushSegment(missingData, shift.startDate, segmentStart, segmentEnd)
+    })
   })
 
-  const barHeight = 10
-  const barGap = 2
-
-  const renderItem = (color, offsetIndex) => (params, api) => {
+  const renderBar = (color) => (params, api) => {
     const start = api.value(0)
     const end = api.value(1)
     const yIndex = api.value(2)
-    
-    if (start == null || end == null || yIndex == null) {
-      return null
-    }
-    
     const pointStart = api.coord([start, yIndex])
     const pointEnd = api.coord([end, yIndex])
-    
-    if (!pointStart || !pointEnd || pointStart.length < 2 || pointEnd.length < 2) {
-      return null
-    }
-    
-    const yPosition = pointStart[1] - barHeight / 2 - (barHeight + barGap) * offsetIndex
-    
+    const barHeight = 10
+
     return {
       type: 'rect',
       shape: {
         x: Math.min(pointStart[0], pointEnd[0]),
-        y: yPosition,
+        y: pointStart[1] - (barHeight / 2),
         width: Math.abs(pointEnd[0] - pointStart[0]),
         height: barHeight
       },
-      style: {
+      style: api.style({
         fill: color
-      }
+      })
     }
   }
 
-  const series = []
-  
-  if (normalData.length > 0) {
-    series.push({
+  const series = [
+    {
       name: '正常工时',
       type: 'custom',
-      renderItem: renderItem('#67C23A', 0),
-      data: normalData,
-      itemStyle: {
-        color: '#67C23A'
-      }
-    })
-  }
-  
-  if (ot1Data.length > 0) {
-    series.push({
+      renderItem: renderBar('#67C23A'),
+      data: normalData
+    },
+    {
       name: 'OH1 加班',
       type: 'custom',
-      renderItem: renderItem('#FF9900', 1),
-      data: ot1Data,
-      itemStyle: {
-        color: '#FF9900'
-      }
-    })
-  }
-  
-  if (ot2Data.length > 0) {
-    series.push({
+      renderItem: renderBar('#FF9900'),
+      data: ot1Data
+    },
+    {
       name: 'OH2 加班',
       type: 'custom',
-      renderItem: renderItem('#F56C6C', 2),
-      data: ot2Data,
+      renderItem: renderBar('#F56C6C'),
+      data: ot2Data
+    },
+    {
+      name: '缺卡时段',
+      type: 'custom',
+      renderItem: renderBar('#909399'),
+      data: missingData,
       itemStyle: {
-        color: '#F56C6C'
+        opacity: 0.45
       }
-    })
-  }
+    }
+  ].filter(item => item.data.length > 0)
 
   return {
     title: {
@@ -503,82 +469,74 @@ export const getDailyWorkDetailChartOption = (employee, config) => {
     tooltip: {
       trigger: 'item',
       formatter: (params) => {
-        if (params.value && params.value.length >= 3) {
-          const dateIdx = params.value[2]
-          const date = dates[dateIdx]
-          const start = formatMinutesToTime(params.value[0])
-          const end = formatMinutesToTime(params.value[1])
-          return `${date}日<br/>${params.seriesName}: ${start} - ${end}`
-        }
-        return params.seriesName
+        if (!params.value) return params.seriesName
+        const label = labels[params.value[2]]
+        return `${label}<br/>${params.seriesName}: ${minutesToTime(params.value[0])} - ${minutesToTime(params.value[1])}`
       }
     },
     legend: {
-      data: ['正常工时', 'OH1 加班', 'OH2 加班'],
-      top: 40,
-      textStyle: {
-        color: '#333'
-      }
+      data: ['正常工时', 'OH1 加班', 'OH2 加班', '缺卡时段'],
+      top: 40
     },
     grid: {
       top: 80,
-      left: 80,
-      right: 30,
+      left: 90,
+      right: 40,
       bottom: 50
     },
     xAxis: {
       type: 'value',
       min: 0,
-      max: 1440,
-      interval: 180,
+      max: 24 * 60,
+      interval: 120,
       axisLabel: {
-        formatter: (value) => formatMinutesToTime(value)
+        formatter: (value) => minutesToTime(value)
       },
       name: '时间'
     },
     yAxis: {
       type: 'category',
-      data: dates.map(d => `${d}日`),
-      axisLabel: {
-        interval: 0
-      },
-      name: '日期'
+      data: labels,
+      name: '班次'
     },
-    series: series
+    series
   }
 }
 
-export const getPunchTrendChartOption = (employee) => {
-  const dateMap = {}
-  
-  employee.rawPunches?.forEach(punch => {
-    if (!dateMap[punch.date]) {
-      dateMap[punch.date] = {
-        onDuty: null,
-        offDuty: null
-      }
+export const getPunchTrendChartOption = (employee, config) => {
+  const { dailyRecords, shifts } = getAnalysis(employee, config)
+  const shiftMap = new Map()
+
+  shifts.forEach((shift) => {
+    if (!shiftMap.has(shift.startDate)) {
+      shiftMap.set(shift.startDate, {
+        onDutyMinutes: null,
+        offDutyMinutes: null
+      })
     }
-    if (punch.time.length > 0) {
-      if (!dateMap[punch.date].onDuty) {
-        dateMap[punch.date].onDuty = punch.time[0]
-      }
-      dateMap[punch.date].offDuty = punch.time[punch.time.length - 1]
+
+    const entry = shiftMap.get(shift.startDate)
+    const onDutyMinutes = shift.cleanedStart?.minutes ?? null
+    const offDutyMinutes = shift.endAbsoluteMinutes == null
+      ? null
+      : shift.endAbsoluteMinutes - ((shift.startDate - 1) * 24 * 60)
+
+    if (onDutyMinutes != null) {
+      entry.onDutyMinutes = entry.onDutyMinutes == null ? onDutyMinutes : Math.min(entry.onDutyMinutes, onDutyMinutes)
+    }
+    if (offDutyMinutes != null) {
+      entry.offDutyMinutes = entry.offDutyMinutes == null ? offDutyMinutes : Math.max(entry.offDutyMinutes, offDutyMinutes)
     }
   })
 
-  const dates = Object.keys(dateMap).sort((a, b) => a - b)
-  
-  const timeToMinutes = (timeStr) => {
-    if (!timeStr) return null
-    const [h, m] = timeStr.split(':').map(Number)
-    return h * 60 + m
-  }
-  
-  const formatMinutesToTime = (minutes) => {
-    const h = Math.floor(minutes / 60)
-    const m = Math.floor(minutes % 60)
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  }
+  const dates = dailyRecords.map(record => record.date)
+  const stdStart = timeToMinutes(config.STD_START_TIME)
+  const stdEnd = timeToMinutes(config.STD_END_TIME)
+  const allMinutes = dates.flatMap((date) => {
+    const record = shiftMap.get(date)
+    return [record?.onDutyMinutes, record?.offDutyMinutes].filter(value => value != null)
+  })
+  const maxMinutes = allMinutes.length ? Math.max(...allMinutes) : stdEnd
 
   return {
     title: {
@@ -589,10 +547,10 @@ export const getPunchTrendChartOption = (employee) => {
     tooltip: {
       trigger: 'axis',
       formatter: (params) => {
-        let result = params[0].name + '<br/>'
-        params.forEach(param => {
+        let result = `${params[0]?.name || ''}<br/>`
+        params.forEach((param) => {
           if (param.value != null) {
-            result += `${param.marker}${param.seriesName}: ${formatMinutesToTime(param.value)}<br/>`
+            result += `${param.marker}${param.seriesName}: ${minutesToTime(param.value)}<br/>`
           }
         })
         return result
@@ -604,47 +562,63 @@ export const getPunchTrendChartOption = (employee) => {
     },
     grid: {
       top: 80,
-      left: 50,
-      right: 30,
-      bottom: 30
+      left: 60,
+      right: 40,
+      bottom: 40
     },
     xAxis: {
       type: 'category',
-      data: dates.map(d => `${d}日`)
+      data: dates.map(date => `${date}日`)
     },
     yAxis: {
       type: 'value',
       min: 0,
-      max: 1440,
-      interval: 180,
+      max: Math.max(24 * 60, Math.ceil(maxMinutes / 60) * 60),
+      interval: 120,
       axisLabel: {
-        formatter: (value) => formatMinutesToTime(value)
+        formatter: (value) => minutesToTime(value)
       }
     },
     series: [
       {
         name: '上班时间',
         type: 'line',
-        data: dates.map(date => timeToMinutes(dateMap[date]?.onDuty)),
+        data: dates.map(date => shiftMap.get(date)?.onDutyMinutes ?? null),
         itemStyle: {
           color: '#67C23A'
         },
+        connectNulls: false,
         markLine: {
           data: [
-            { yAxis: 480, name: '标准上班时间', lineStyle: { color: '#67C23A', type: 'dashed' } }
+            {
+              yAxis: stdStart,
+              name: '标准上班时间',
+              lineStyle: {
+                color: '#67C23A',
+                type: 'dashed'
+              }
+            }
           ]
         }
       },
       {
         name: '下班时间',
         type: 'line',
-        data: dates.map(date => timeToMinutes(dateMap[date]?.offDuty)),
+        data: dates.map(date => shiftMap.get(date)?.offDutyMinutes ?? null),
         itemStyle: {
           color: '#F56C6C'
         },
+        connectNulls: false,
         markLine: {
           data: [
-            { yAxis: 1080, name: '标准下班时间', lineStyle: { color: '#F56C6C', type: 'dashed' } }
+            {
+              yAxis: stdEnd,
+              name: '标准下班时间',
+              lineStyle: {
+                color: '#F56C6C',
+                type: 'dashed'
+              }
+            }
           ]
         }
       }
